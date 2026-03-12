@@ -2,6 +2,7 @@ trigger:
   branches:
     include:
       - master
+      - main
       - feature/*
       - bugfix/*
 
@@ -9,194 +10,293 @@ pr:
   branches:
     include:
       - master
+      - main
 
 variables:
-  terraformVersion: '1.11.3'
-  workingDirectory: '$(System.DefaultWorkingDirectory)'
-  tfPlanFile: 'tfplan'
-  devTfvarsFile: 'env/dev.tfvars'
-  prodTfvarsFile: 'env/prod.tfvars'
+- group: kv-common-vars
+- group: kv-dev-vars
+- group: kv-prod-vars
 
-  # Azure DevOps service connections
-  devServiceConnection: 'sc-azure-dev-oidc'
-  prodServiceConnection: 'sc-azure-prod-oidc'
+- name: terraformVersion
+  value: '1.11.3'
 
-  # Remote state backend values
-  backendResourceGroup: 'rg-terraform-state'
-  backendStorageAccount: 'tfstatekeyvaultdemo'
-  backendContainer: 'tfstate'
-  backendKeyDev: 'keyvault/dev/terraform.tfstate'
-  backendKeyProd: 'keyvault/prod/terraform.tfstate'
+- name: workingDirectory
+  value: '$(System.DefaultWorkingDirectory)'
+
+- name: tfPlanFile
+  value: 'tfplan'
+
+- name: devTfvarsFile
+  value: 'env/dev.nonsecret.tfvars'
+
+- name: prodTfvarsFile
+  value: 'env/prod.nonsecret.tfvars'
+
+- name: devServiceConnection
+  value: 'sc-azure-dev-oidc'
+
+- name: prodServiceConnection
+  value: 'sc-azure-prod-oidc'
+
+- name: backendResourceGroup
+  value: 'rg-terraform-state'
+
+- name: backendStorageAccount
+  value: 'tfstatekeyvaultdemo'
+
+- name: backendContainer
+  value: 'tfstate'
+
+- name: backendKeyDev
+  value: 'keyvault/dev/terraform.tfstate'
+
+- name: backendKeyProd
+  value: 'keyvault/prod/terraform.tfstate'
 
 stages:
-  - stage: Validate
-    displayName: 'Validate Terraform'
-    jobs:
-      - job: Validate
-        displayName: 'Terraform fmt, init, validate'
-        pool:
-          name: Default
-        steps:
+- stage: Validate
+  displayName: 'Validate Terraform'
+  jobs:
+  - job: Validate
+    displayName: 'Terraform fmt, init, validate'
+    pool:
+      name: Default
+    steps:
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - task: AzureCLI@2
+      displayName: 'Terraform init and validate'
+      inputs:
+        azureSubscription: '$(devServiceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          set -e
+
+          terraform fmt -check -recursive
+
+          terraform init \
+            -backend-config="resource_group_name=$(backendResourceGroup)" \
+            -backend-config="storage_account_name=$(backendStorageAccount)" \
+            -backend-config="container_name=$(backendContainer)" \
+            -backend-config="key=$(backendKeyDev)"
+
+          terraform validate
+      env:
+        TF_VAR_tenant_id: $(tenant_id)
+        TF_VAR_log_analytics_workspace_id: $(log_analytics_workspace_id)
+        TF_VAR_admin_principal_ids: $(admin_principal_ids)
+        TF_VAR_secrets_officer_principal_ids: $(secrets_officer_principal_ids)
+        TF_VAR_secrets_user_principal_ids: $(secrets_user_principal_ids)
+
+- stage: Plan_Dev
+  displayName: 'Plan Dev'
+  dependsOn: Validate
+  condition: succeeded()
+  jobs:
+  - job: PlanDev
+    displayName: 'Terraform plan for Dev'
+    pool:
+      name: Default
+    steps:
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - task: AzureCLI@2
+      displayName: 'Terraform plan (Dev)'
+      inputs:
+        azureSubscription: '$(devServiceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          set -e
+
+          terraform init \
+            -backend-config="resource_group_name=$(backendResourceGroup)" \
+            -backend-config="storage_account_name=$(backendStorageAccount)" \
+            -backend-config="container_name=$(backendContainer)" \
+            -backend-config="key=$(backendKeyDev)"
+
+          terraform plan \
+            -out=$(tfPlanFile) \
+            -input=false \
+            -var-file=$(devTfvarsFile)
+
+          terraform show -no-color $(tfPlanFile) > dev-plan.txt
+      env:
+        TF_VAR_tenant_id: $(tenant_id)
+        TF_VAR_log_analytics_workspace_id: $(log_analytics_workspace_id)
+        TF_VAR_admin_principal_ids: $(admin_principal_ids)
+        TF_VAR_secrets_officer_principal_ids: $(secrets_officer_principal_ids)
+        TF_VAR_secrets_user_principal_ids: $(secrets_user_principal_ids)
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Dev plan artifact'
+      inputs:
+        targetPath: '$(workingDirectory)'
+        artifact: 'terraform-dev-plan'
+
+- stage: Apply_Dev
+  displayName: 'Apply Dev'
+  dependsOn: Plan_Dev
+  condition: succeeded()
+  jobs:
+  - deployment: ApplyDev
+    displayName: 'Apply Terraform to Dev'
+    environment: 'tf-dev'
+    pool:
+      name: Default
+    strategy:
+      runOnce:
+        deploy:
+          steps:
           - checkout: self
 
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download Dev plan artifact'
             inputs:
-              terraformVersion: '$(terraformVersion)'
-
-          - task: AzureCLI@2
-            displayName: 'Terraform init and validate'
-            inputs:
-              azureSubscription: '$(devServiceConnection)'
-              scriptType: bash
-              scriptLocation: inlineScript
-              workingDirectory: '$(workingDirectory)'
-              inlineScript: |
-                set -e
-
-                terraform fmt -check -recursive
-
-                terraform init \
-                  -backend-config="resource_group_name=$(backendResourceGroup)" \
-                  -backend-config="storage_account_name=$(backendStorageAccount)" \
-                  -backend-config="container_name=$(backendContainer)" \
-                  -backend-config="key=$(backendKeyDev)"
-
-                terraform validate
-
-  - stage: Plan_Dev
-    displayName: 'Plan Dev'
-    dependsOn: Validate
-    condition: succeeded()
-    jobs:
-      - job: PlanDev
-        displayName: 'Terraform plan for Dev'
-        pool:
-          name: Default
-        steps:
-          - checkout: self
-
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '$(terraformVersion)'
-
-          - task: AzureCLI@2
-            displayName: 'Terraform plan (Dev)'
-            inputs:
-              azureSubscription: '$(devServiceConnection)'
-              scriptType: bash
-              scriptLocation: inlineScript
-              workingDirectory: '$(workingDirectory)'
-              inlineScript: |
-                set -e
-
-                terraform init \
-                  -backend-config="resource_group_name=$(backendResourceGroup)" \
-                  -backend-config="storage_account_name=$(backendStorageAccount)" \
-                  -backend-config="container_name=$(backendContainer)" \
-                  -backend-config="key=$(backendKeyDev)"
-
-                terraform plan \
-                  -out=$(tfPlanFile) \
-                  -input=false \
-                  -var-file=$(devTfvarsFile)
-
-                terraform show -no-color $(tfPlanFile) > dev-plan.txt
-
-          - task: PublishPipelineArtifact@1
-            displayName: 'Publish Dev plan artifact'
-            inputs:
-              targetPath: '$(workingDirectory)'
               artifact: 'terraform-dev-plan'
+              path: '$(Pipeline.Workspace)/terraform-dev-plan'
 
-  - stage: Apply_Dev
-    displayName: 'Apply Dev'
-    dependsOn: Plan_Dev
-    condition: succeeded()
-    jobs:
-      - deployment: ApplyDev
-        displayName: 'Apply Terraform to Dev'
-        environment: 'tf-dev'
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
 
-                - task: DownloadPipelineArtifact@2
-                  displayName: 'Download Dev plan artifact'
-                  inputs:
-                    artifact: 'terraform-dev-plan'
-                    path: '$(Pipeline.Workspace)/terraform-dev-plan'
+          - task: AzureCLI@2
+            displayName: 'Terraform apply (Dev)'
+            inputs:
+              azureSubscription: '$(devServiceConnection)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: '$(Pipeline.Workspace)/terraform-dev-plan'
+              inlineScript: |
+                set -e
 
-                - task: TerraformInstaller@1
-                  displayName: 'Install Terraform'
-                  inputs:
-                    terraformVersion: '$(terraformVersion)'
+                terraform init \
+                  -backend-config="resource_group_name=$(backendResourceGroup)" \
+                  -backend-config="storage_account_name=$(backendStorageAccount)" \
+                  -backend-config="container_name=$(backendContainer)" \
+                  -backend-config="key=$(backendKeyDev)"
 
-                - task: AzureCLI@2
-                  displayName: 'Terraform apply (Dev)'
-                  inputs:
-                    azureSubscription: '$(devServiceConnection)'
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    workingDirectory: '$(Pipeline.Workspace)/terraform-dev-plan'
-                    inlineScript: |
-                      set -e
+                terraform apply -input=false -auto-approve $(tfPlanFile)
+            env:
+              TF_VAR_tenant_id: $(tenant_id)
+              TF_VAR_log_analytics_workspace_id: $(log_analytics_workspace_id)
+              TF_VAR_admin_principal_ids: $(admin_principal_ids)
+              TF_VAR_secrets_officer_principal_ids: $(secrets_officer_principal_ids)
+              TF_VAR_secrets_user_principal_ids: $(secrets_user_principal_ids)
 
-                      terraform init \
-                        -backend-config="resource_group_name=$(backendResourceGroup)" \
-                        -backend-config="storage_account_name=$(backendStorageAccount)" \
-                        -backend-config="container_name=$(backendContainer)" \
-                        -backend-config="key=$(backendKeyDev)"
+- stage: Plan_Prod
+  displayName: 'Plan Prod'
+  dependsOn: Apply_Dev
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  jobs:
+  - job: PlanProd
+    displayName: 'Terraform plan for Prod'
+    pool:
+      name: Default
+    steps:
+    - checkout: self
 
-                      terraform apply -input=false -auto-approve $(tfPlanFile)
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
 
-  # - stage: Plan_Prod
-  #   displayName: 'Plan Prod'
-  #   dependsOn: Apply_Dev
-  #   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  #   jobs:
-  #     - job: PlanProd
-  #       displayName: 'Terraform plan for Prod'
-  #       pool:
-  #         name: Default
-  #       steps:
-  #         - checkout: self
+    - task: AzureCLI@2
+      displayName: 'Terraform plan (Prod)'
+      inputs:
+        azureSubscription: '$(prodServiceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          set -e
 
-  #         - task: TerraformInstaller@1
-  #           displayName: 'Install Terraform'
-  #           inputs:
-  #             terraformVersion: '$(terraformVersion)'
+          terraform init \
+            -backend-config="resource_group_name=$(backendResourceGroup)" \
+            -backend-config="storage_account_name=$(backendStorageAccount)" \
+            -backend-config="container_name=$(backendContainer)" \
+            -backend-config="key=$(backendKeyProd)"
 
-  #         - task: AzureCLI@2
-  #           displayName: 'Terraform plan (Prod)'
-  #           inputs:
-  #             azureSubscription: '$(prodServiceConnection)'
-  #             scriptType: bash
-  #             scriptLocation: inlineScript
-  #             workingDirectory: '$(workingDirectory)'
-  #             inlineScript: |
-  #               set -e
+          terraform plan \
+            -out=$(tfPlanFile) \
+            -input=false \
+            -var-file=$(prodTfvarsFile)
 
-  #               terraform init \
-  #                 -backend-config="resource_group_name=$(backendResourceGroup)" \
-  #                 -backend-config="storage_account_name=$(backendStorageAccount)" \
-  #                 -backend-config="container_name=$(backendContainer)" \
-  #                 -backend-config="key=$(backendKeyProd)"
+          terraform show -no-color $(tfPlanFile) > prod-plan.txt
+      env:
+        TF_VAR_tenant_id: $(prod_tenant_id)
+        TF_VAR_log_analytics_workspace_id: $(prod_log_analytics_workspace_id)
+        TF_VAR_admin_principal_ids: $(prod_admin_principal_ids)
+        TF_VAR_secrets_officer_principal_ids: $(prod_secrets_officer_principal_ids)
+        TF_VAR_secrets_user_principal_ids: $(prod_secrets_user_principal_ids)
 
-  #               terraform plan \
-  #                 -out=$(tfPlanFile) \
-  #                 -input=false \
-  #                 -var-file=$(prodTfvarsFile)
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Prod plan artifact'
+      inputs:
+        targetPath: '$(workingDirectory)'
+        artifact: 'terraform-prod-plan'
 
-  #               terraform show -no-color $(tfPlanFile) > prod-plan.txt
+- stage: Apply_Prod
+  displayName: 'Apply Prod'
+  dependsOn: Plan_Prod
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  jobs:
+  - deployment: ApplyProd
+    displayName: 'Apply Terraform to Prod'
+    environment: 'tf-prod'
+    pool:
+      name: Default
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
 
-  #         - task: PublishPipelineArtifact@1
-  #           displayName: 'Publish Prod plan artifact'
-  #           inputs:
-  #             targetPath: '$(workingDirectory)'
-  #             artifact: 'terraform-prod-plan'
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download Prod plan artifact'
+            inputs:
+              artifact: 'terraform-prod-plan'
+              path: '$(Pipeline.Workspace)/terraform-prod-plan'
 
-  
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform apply (Prod)'
+            inputs:
+              azureSubscription: '$(prodServiceConnection)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: '$(Pipeline.Workspace)/terraform-prod-plan'
+              inlineScript: |
+                set -e
+
+                terraform init \
+                  -backend-config="resource_group_name=$(backendResourceGroup)" \
+                  -backend-config="storage_account_name=$(backendStorageAccount)" \
+                  -backend-config="container_name=$(backendContainer)" \
+                  -backend-config="key=$(backendKeyProd)"
+
+                terraform apply -input=false $(tfPlanFile)
+            env:
+              TF_VAR_tenant_id: $(prod_tenant_id)
+              TF_VAR_log_analytics_workspace_id: $(prod_log_analytics_workspace_id)
+              TF_VAR_admin_principal_ids: $(prod_admin_principal_ids)
+              TF_VAR_secrets_officer_principal_ids: $(prod_secrets_officer_principal_ids)
+              TF_VAR_secrets_user_principal_ids: $(prod_secrets_user_principal_ids)

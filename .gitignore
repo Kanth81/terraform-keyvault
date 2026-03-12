@@ -4,6 +4,3 @@
 *.tfstate.*
 .terraform.lock.hcl
 
-# sensitive tfvars
-
-
