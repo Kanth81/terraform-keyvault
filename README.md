@@ -137,7 +137,44 @@ The Key Vault is configured with:
 This prevents accidental or malicious deletion of secrets.
 
 ---
+## Terraform Remote State
 
+Terraform state should not be stored locally in production environments.  
+This project supports storing the Terraform state in an Azure Storage Account.
+
+Benefits:
+- Centralized state management
+- State locking
+- Safer team collaboration
+- Compatible with CI/CD pipelines
+
+### Backend Configuration
+
+Example backend configuration:
+
+```hcl
+backend "azurerm" {}
+```
+
+Example backend configuration file (`backend.hcl.example`):
+
+```hcl
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "tfstatekeyvaultdemo"
+container_name       = "tfstate"
+key                  = "keyvault/terraform.tfstate"
+use_azuread_auth     = true
+```
+
+### Initialize Terraform Backend
+
+```bash
+terraform init -backend-config=backend.hcl
+```
+
+Terraform will then store the state file securely in Azure Storage.
+
+---
 ## Secure Secret Injection Strategy
 
 Secrets are **not stored in Terraform configuration**.
@@ -270,9 +307,6 @@ The repository follows Terraform security best practices:
 Possible enhancements include:
 
 * CI/CD pipeline integration
-* Terraform remote state in Azure Storage
-* Azure Policy enforcement
-* Key Vault secret rotation automation
 * Monitoring alerts for vault activity
 
 ---
