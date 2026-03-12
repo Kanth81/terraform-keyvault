@@ -1,6 +1,3 @@
-Azure Key Vault Terraform Deployment
-
-Overview
 # Azure Key Vault Terraform Deployment
 
 ## Overview
@@ -195,51 +192,92 @@ Example:
 
 ```
 terraform plan -var-file=env/dev.tfvars
-terraform plan -var-file=e
+terraform plan -var-file=env/test.tfvars
+terraform plan -var-file=env/prod.tfvars
 ```
 
 Benefits:
 
-Environment isolation
-
-Consistent infrastructure
-
-Easier configuration management
+* Environment isolation
+* Consistent infrastructure
+* Easier configuration management
 
 In a production setup, each environment would also use separate:
 
-remote Terraform state
+* remote Terraform state
+* Azure subscriptions or resource groups
+* CI/CD pipelines
 
-Azure subscriptions or resource groups
+---
 
-CI/CD pipelines
+## Prerequisites
 
+Before running Terraform, ensure the following:
 
-Deployment Steps
-Initialize Terraform
+* Terraform installed (v1.6+)
+* Azure CLI installed
+* Authenticated to Azure
+
+Login command:
+
+```
+az login
+```
+
+---
+
+## Deployment Steps
+
+### Initialize Terraform
+
+```
 terraform init
-Validate configuration
+```
+
+### Validate configuration
+
+```
 terraform validate
-Review execution plan
+```
+
+### Review execution plan
+
+```
 terraform plan -var-file=env/dev.tfvars
-Apply the deployment
+```
+
+### Apply the deployment
+
+```
 terraform apply -var-file=env/dev.tfvars
+```
 
+---
 
-Security Best Practices
+## Security Best Practices
 
 The repository follows Terraform security best practices:
 
-Terraform state files are excluded from Git
+* Terraform state files are excluded from Git
+* `.tfvars` files containing environment data are excluded
+* Secrets are stored only in Azure Key Vault
+* Access is managed through RBAC
 
-.tfvars files containing environment data are excluded
+---
 
-Secrets are stored only in Azure Key Vault
+## Future Improvements
 
-Access is managed through RBAC
+Possible enhancements include:
 
+* CI/CD pipeline integration
+* Terraform remote state in Azure Storage
+* Azure Policy enforcement
+* Key Vault secret rotation automation
+* Monitoring alerts for vault activity
 
-Author
+---
+
+## Author
 
 Lakshmikanth Talkad Nagaraju
 
