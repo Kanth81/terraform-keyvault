@@ -1,0 +1,29 @@
+environment                  = "prod"
+location                     = "ukwest"
+resource_group_name          = "rg-prod-shared-keyvault"
+vnet_resource_group_name     = "rg-prod-network"
+vnet_name                    = "vnet-prod-core"
+private_endpoint_subnet_name = "snet-private-endpoints"
+log_analytics_workspace_id   = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-monitoring/providers/Microsoft.OperationalInsights/workspaces/law-prod-shared"
+tenant_id                    = "11111111-1111-1111-1111-111111111111"
+key_vault_name               = "kv-prod-company-shared-001"
+sku_name                     = "premium"
+soft_delete_retention_days   = 90
+
+admin_principal_ids = [
+  "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+]
+
+secrets_officer_principal_ids = [
+  "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+]
+
+secrets_user_principal_ids = [
+  "cccccccc-cccc-cccc-cccc-cccccccccccc"
+]
+
+tags = {
+  owner       = "platform-team"
+  costcentre  = "shared-services"
+  application = "platform"
+}
