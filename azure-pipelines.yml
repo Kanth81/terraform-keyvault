@@ -153,91 +153,50 @@ stages:
 
                       terraform apply -input=false -auto-approve $(tfPlanFile)
 
-  - stage: Plan_Prod
-    displayName: 'Plan Prod'
-    dependsOn: Apply_Dev
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-    jobs:
-      - job: PlanProd
-        displayName: 'Terraform plan for Prod'
-        pool:
-          vmImage: 'ubuntu-latest'
-        steps:
-          - checkout: self
+  # - stage: Plan_Prod
+  #   displayName: 'Plan Prod'
+  #   dependsOn: Apply_Dev
+  #   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  #   jobs:
+  #     - job: PlanProd
+  #       displayName: 'Terraform plan for Prod'
+  #       pool:
+  #         vmImage: 'ubuntu-latest'
+  #       steps:
+  #         - checkout: self
 
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '$(terraformVersion)'
+  #         - task: TerraformInstaller@1
+  #           displayName: 'Install Terraform'
+  #           inputs:
+  #             terraformVersion: '$(terraformVersion)'
 
-          - task: AzureCLI@2
-            displayName: 'Terraform plan (Prod)'
-            inputs:
-              azureSubscription: '$(prodServiceConnection)'
-              scriptType: bash
-              scriptLocation: inlineScript
-              workingDirectory: '$(workingDirectory)'
-              inlineScript: |
-                set -e
+  #         - task: AzureCLI@2
+  #           displayName: 'Terraform plan (Prod)'
+  #           inputs:
+  #             azureSubscription: '$(prodServiceConnection)'
+  #             scriptType: bash
+  #             scriptLocation: inlineScript
+  #             workingDirectory: '$(workingDirectory)'
+  #             inlineScript: |
+  #               set -e
 
-                terraform init \
-                  -backend-config="resource_group_name=$(backendResourceGroup)" \
-                  -backend-config="storage_account_name=$(backendStorageAccount)" \
-                  -backend-config="container_name=$(backendContainer)" \
-                  -backend-config="key=$(backendKeyProd)"
+  #               terraform init \
+  #                 -backend-config="resource_group_name=$(backendResourceGroup)" \
+  #                 -backend-config="storage_account_name=$(backendStorageAccount)" \
+  #                 -backend-config="container_name=$(backendContainer)" \
+  #                 -backend-config="key=$(backendKeyProd)"
 
-                terraform plan \
-                  -out=$(tfPlanFile) \
-                  -input=false \
-                  -var-file=$(prodTfvarsFile)
+  #               terraform plan \
+  #                 -out=$(tfPlanFile) \
+  #                 -input=false \
+  #                 -var-file=$(prodTfvarsFile)
 
-                terraform show -no-color $(tfPlanFile) > prod-plan.txt
+  #               terraform show -no-color $(tfPlanFile) > prod-plan.txt
 
-          - task: PublishPipelineArtifact@1
-            displayName: 'Publish Prod plan artifact'
-            inputs:
-              targetPath: '$(workingDirectory)'
-              artifact: 'terraform-prod-plan'
+  #         - task: PublishPipelineArtifact@1
+  #           displayName: 'Publish Prod plan artifact'
+  #           inputs:
+  #             targetPath: '$(workingDirectory)'
+  #             artifact: 'terraform-prod-plan'
 
-  - stage: Apply_Prod
-    displayName: 'Apply Prod'
-    dependsOn: Plan_Prod
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-    jobs:
-      - deployment: ApplyProd
-        displayName: 'Apply Terraform to Prod'
-        environment: 'tf-prod'
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-
-                - task: DownloadPipelineArtifact@2
-                  displayName: 'Download Prod plan artifact'
-                  inputs:
-                    artifact: 'terraform-prod-plan'
-                    path: '$(Pipeline.Workspace)/terraform-prod-plan'
-
-                - task: TerraformInstaller@1
-                  displayName: 'Install Terraform'
-                  inputs:
-                    terraformVersion: '$(terraformVersion)'
-
-                - task: AzureCLI@2
-                  displayName: 'Terraform apply (Prod)'
-                  inputs:
-                    azureSubscription: '$(prodServiceConnection)'
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    workingDirectory: '$(Pipeline.Workspace)/terraform-prod-plan'
-                    inlineScript: |
-                      set -e
-
-                      terraform init \
-                        -backend-config="resource_group_name=$(backendResourceGroup)" \
-                        -backend-config="storage_account_name=$(backendStorageAccount)" \
-                        -backend-config="container_name=$(backendContainer)" \
-                        -backend-config="key=$(backendKeyProd)"
-
-                      terraform apply -input=false $(tfPlanFile)
+  
