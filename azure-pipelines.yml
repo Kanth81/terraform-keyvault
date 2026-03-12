@@ -35,7 +35,7 @@ stages:
       - job: Validate
         displayName: 'Terraform fmt, init, validate'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: Default
         steps:
           - checkout: self
 
@@ -72,7 +72,7 @@ stages:
       - job: PlanDev
         displayName: 'Terraform plan for Dev'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: Default
         steps:
           - checkout: self
 
@@ -161,7 +161,7 @@ stages:
   #     - job: PlanProd
   #       displayName: 'Terraform plan for Prod'
   #       pool:
-  #         vmImage: 'ubuntu-latest'
+  #         name: Default
   #       steps:
   #         - checkout: self
 
